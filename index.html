@@ -5320,11 +5320,21 @@
       var provider=new ethers.BrowserProvider(window.ethereum);
       await provider.send("eth_requestAccounts",[]);
       await ensureBaseNetwork(provider);
+      /* RED PHONE: mint-debug session. after wallet_switchEthereumChain the old provider can keep resolving */
+      /* RED PHONE: reads against the PRE-switch chain, so mintPrice came back a stale 0 and the payable mint */
+      /* RED PHONE: reverted with empty data ("missing revert data"). rebuild the provider on the now-current */
+      /* RED PHONE: chain and re-verify it really is Base before reading price or sending the mint. */
+      provider=new ethers.BrowserProvider(window.ethereum);
+      var net=await provider.getNetwork();
+      if(net.chainId!==8453n){ showMintStatus("Your wallet is on the wrong network.\n\nSwitch it to Base (chain 8453) and mint again."); mintBusy=false; return; }
       var signer=await provider.getSigner();
       var contract=new ethers.Contract(MINT_CONTRACT_ADDRESS,MINT_ABI,signer);
 
-      var price=0n;
-      try{ price=await contract.mintPrice(); } catch(e){}
+      /* RED PHONE: a payable mint with an unknown price is the classic empty revert. read the price for real; */
+      /* RED PHONE: if the read itself fails, say so instead of silently sending 0 and letting the contract revert. */
+      var price;
+      try{ price=await contract.mintPrice(); }
+      catch(e){ showMintStatus("Could not read the mint price from the contract on Base.\n\n"+describeMintError(e)); mintBusy=false; return; }
 
       showMintStatus("Confirm the transaction in your wallet now...\n\nPrice: "+ethers.formatEther(price)+" ETH plus gas.");
       var tx=await contract.mint(pinJson.tokenURI,{value:price});
